@@ -1,16 +1,17 @@
 # Cymatics-based Acoustic Discomfort Index (ADI) Calculator
 
-Python implementation for quantifying Feng Shui "Sound Sha" using Cymatics theory and computational simulation.
+Python implementation for quantifying Feng Shui "Sound Sha" using Cymatics-inspired visualization and computational simulation.
 
 ## 📖 Overview
 
 This repository contains the Python code for the paper:
 
-> **"Quantifying Feng Shui 'Sound Sha' (Acoustic Discomfort) Using Cymatics Theory and Computational Simulation: Proposal of Acoustic Discomfort Index (ADI)"**
-> 
-> *Target Journal: MDPI Acoustics*
+> **"Quantifying Feng Shui 'Sound Sha' (Acoustic Discomfort) Using Cymatics-Inspired Visualization and Computational Simulation: Proposal of Acoustic Discomfort Index (ADI)"**
+>
+> _Target Journal: MDPI Acoustics_
 
 The **Acoustic Discomfort Index (ADI)** integrates three sub-indices calculated from audio features:
+
 - **Symmetry Index (SI)**: Measures harmonic structure based on HNR
 - **Orderliness Index (OI)**: Measures temporal regularity based on envelope CV
 - **Complexity Index (CI)**: Measures spectral complexity based on spectral flatness
@@ -27,6 +28,8 @@ Weights are determined via **entropy weight method** (data-driven, non-subjectiv
 | `acoustic_features.py` | Extracts SI, OI, CI features from audio signals |
 | `adi_calculator.py` | Implements data-driven normalization and entropy weight method |
 | `plot_results.py` | Generates figures (bar charts, radar charts) |
+| `chladni_simulation.py` | Generates Chladni patterns from audio features via the (m,n) modal parameter mapping (see paper §2.4.5) |
+| `generate_figure4.py` | Generates Figure 4: illustrative Chladni patterns at four complexity levels |
 | `requirements.txt` | Python dependencies |
 | `README.md` | This file |
 
@@ -35,13 +38,15 @@ Weights are determined via **entropy weight method** (data-driven, non-subjectiv
 ## 🔧 Installation
 
 ### 1. Clone this repository
-```bash
+
+```
 git clone https://github.com/Zeedge-John/cymatics-adi-calculator.git
 cd cymatics-adi-calculator
 ```
 
 ### 2. Install dependencies
-```bash
+
+```
 pip install -r requirements.txt
 ```
 
@@ -53,11 +58,12 @@ pip install -r requirements.txt
 
 ### Quick Start (with sample data)
 
-```bash
+```
 python run_real_audio.py
 ```
 
 This will:
+
 1. Load 18 water sound samples from `./audio_samples/`
 2. Extract acoustic features (SI, OI, CI)
 3. Apply data-driven normalization
@@ -65,6 +71,45 @@ This will:
 5. Compute ADI for each sample
 6. Generate output CSV: `output_adi_results.csv`
 7. Generate figures: `figure2_adi_bar_chart.png`, `figure3_subindex_radar.png`
+
+---
+
+### Generate Chladni Patterns from Audio Features
+
+```python
+from chladni_simulation import audio_to_chladni_params
+
+# Map normalized sub-indices to Chladni modal parameters (m, n)
+m, n = audio_to_chladni_params(si_norm=0.842, ci_norm=0.097)  # Ocean waves → (2, 1)
+print(f"Chladni parameters: m={m}, n={n}")
+
+# For waterfall (highest complexity):
+m, n = audio_to_chladni_params(si_norm=0.117, ci_norm=0.925)  # Waterfall → (5, 5)
+print(f"Chladni parameters: m={m}, n={n}")
+```
+
+The mapping follows the rule-based conversion defined in the paper (§2.4.5):
+- `m = round((1 - SI_norm) × 4 + 1)` — driven by spectral symmetry
+- `n = round(CI_norm × 4 + 1)` — driven by spectral complexity
+
+The six water sound types produce the following (m, n) pairs:
+
+| Sound Type | Mean SI | Mean CI | (m, n) |
+|-----------|---------|---------|--------|
+| Ocean waves | 0.842 | 0.097 | (2, 1) |
+| River | 0.663 | 0.303 | (2, 2) |
+| Rain | 0.577 | 0.520 | (3, 3) |
+| Stream | 0.412 | 0.379 | (3, 3) |
+| Drip | 0.740 | 0.541 | (2, 3) |
+| Waterfall | 0.117 | 0.925 | (5, 5) |
+
+---
+
+### Generate Figure 4
+
+```
+python generate_figure4.py
+```
 
 ---
 
@@ -97,6 +142,7 @@ print(f"SI: {si:.3f}, OI: {oi:.3f}, CI: {ci:.3f}")
 | `output_adi_results.csv` | ADI values, sub-index scores, and normalization parameters for all samples |
 | `figure2_adi_bar_chart.png` | Bar chart comparing ADI across 6 water sound types |
 | `figure3_subindex_radar.png` | Radar chart showing sub-index patterns |
+| `figure4_chladni_patterns.png` | Chladni patterns at four illustrative (m, n) complexity levels |
 
 ---
 
@@ -112,13 +158,14 @@ Output: ADI value (0-1), sub-indices (SI, OI, CI)
 3. Extract features:
    - SI_raw = f(HNR, pitch_stability)
    - OI_raw = f(envelope_CV, onset_rate)
-   - CI_raw = f(spectral_flatness, MFCC_var)
+   - CI_raw = f(spectral_flatness, MFCC_var, ZCR, bandwidth)
 4. Normalize using data-driven min-max:
    - SI_norm = (SI_raw - min_SI) / (max_SI - min_SI)
    (same for OI, CI)
 5. Calculate entropy weights w_SI, w_OI, w_CI
 6. ADI = w_SI*(1-SI_norm) + w_OI*(1-OI_norm) + w_CI*CI_norm
-7. Return ADI, SI_norm, OI_norm, CI_norm
+7. Map to Chladni params: m = round((1-SI_norm)×4+1), n = round(CI_norm×4+1)
+8. Return ADI, SI_norm, OI_norm, CI_norm, (m, n)
 ```
 
 ---
@@ -131,7 +178,7 @@ The 18 water sound samples used in this study are available from [Freesound.org]
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Zeedge-John/cymatics-adi-calculator/blob/main/LICENSE) file for details.
 
 ---
 
@@ -139,9 +186,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If you use this code, please cite:
 
-```bibtex
+```
 @article{jiang2026quantifying,
-  title={Quantifying Feng Shui "Sound Sha" (Acoustic Discomfort) Using Cymatics Theory and Computational Simulation: Proposal of Acoustic Discomfort Index (ADI)},
+  title={Quantifying Feng Shui "Sound Sha" (Acoustic Discomfort) Using Cymatics-Inspired Visualization and Computational Simulation: Proposal of Acoustic Discomfort Index (ADI)},
   author={Jiang, Zijie},
   journal={MDPI Acoustics},
   year={2026},
@@ -153,8 +200,10 @@ If you use this code, please cite:
 
 ## ✉️ Contact
 
-**Corresponding Author**: Jiang Zijie  
-**Email**: 391868404@qq.com  
+**Corresponding Author**: Jiang Zijie
+
+**Email**: [391868404@qq.com](mailto:391868404@qq.com)
+
 **Affiliation**: Institute of Ecological Planning and Landscape Design, Zhejiang University, Hangzhou 310058, China
 
 ---
@@ -163,9 +212,8 @@ If you use this code, please cite:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.0 | 2026-06 | Added `chladni_simulation.py` and `generate_figure4.py` |
 | v1.0 | 2026-06 | Initial release (ADI calculation code v3) |
-| v0.2 | 2026-05 | Added data-driven normalization |
-| v0.1 | 2026-04 | Initial prototype (Chladni-based SI) |
 
 ---
 
