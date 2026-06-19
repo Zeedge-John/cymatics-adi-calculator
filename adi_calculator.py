@@ -212,12 +212,26 @@ def batch_calculate_adi(features_list, sound_type_labels=None):
     global_weights = calculate_entropy_weights(all_sub_indices)
     
     # 第五步：用全局权重重新计算所有ADI
+    # 首先计算所有样本的归一化RMS能量用于响度修正
+    all_rms = [res['features'].get('rms_mean', 0.01) for res in raw_results]
+    rms_min, rms_max = min(all_rms), max(all_rms)
+    rms_range = rms_max - rms_min if rms_max > rms_min else 1.0
+
     for res in raw_results:
         sub = res['sub_indices']
-        ADI = (global_weights['SI'] * sub['discomfort_SI'] +
-               global_weights['OI'] * sub['discomfort_OI'] +
-               global_weights['CI'] * sub['discomfort_CI'])
-        res['ADI'] = float(np.clip(ADI, 0, 1))
+        ADI_base = (global_weights['SI'] * sub['discomfort_SI'] +
+                    global_weights['OI'] * sub['discomfort_OI'] +
+                    global_weights['CI'] * sub['discomfort_CI'])
+
+        # 响度修正因子 alpha=0.3
+        rms = res['features'].get('rms_mean', 0.01)
+        L_norm = (rms - rms_min) / rms_range
+        alpha = 0.3
+        ADI = ADI_base * (1.0 + alpha * L_norm)
+
+        res['ADI'] = float(np.clip(ADI, 0, 2))
+        res['ADI_base'] = float(ADI_base)
+        res['L_norm'] = float(L_norm)
         res['weights'] = global_weights
     
     return raw_results, global_weights, normalization_params

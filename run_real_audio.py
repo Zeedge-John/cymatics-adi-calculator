@@ -1,12 +1,12 @@
 """
-真实音频分析脚本 v3
-使用从Freesound下载的真实水声样本进行ADI计算
+真实音频分析脚本 v4 (120-sample)
+使用从Freesound下载的120个真实水声样本进行ADI计算（每类20个）
 
-v3 改进:
-- 数据驱动归一化（基于真实样本min/max，不再硬编码）
-- SI/OI/CI 全部从真实音频特征计算
-- 使用熵权法确定全局权重
-- Chladni图案仅用于可视化（m,n由音频特征推导）
+v4 改进:
+- 样本量从18扩展到120（每类20个）
+- 动态文件发现（自动扫描audio_samples目录）
+- 支持格式: .wav, .mp3, .flac, .ogg, .aiff
+- 自动跳过.m4a（需ffmpeg解码）
 """
 
 import numpy as np
@@ -49,14 +49,32 @@ from plot_results import plot_multiple_patterns, plot_feature_correlation
 
 AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audio_samples")
 
-AUDIO_FILES = {
-    'stream':   ['water_stream_01.wav',   'water_stream_02.wav',   'water_stream_03.wav'],
-    'rain':     ['water_rain_01.wav',      'water_rain_02.mp3',     'water_rain_03.wav'],
-    'waterfall':['water_waterfall_01.wav', 'water_waterfall_02.wav','water_waterfall_03.wav'],
-    'drip':     ['water_drip_01.wav',      'water_drip_02.mp3',    'water_drip_03.wav'],
-    'river':    ['water_river_01.wav',     'water_river_02.flac',  'water_river_03.wav'],
-    'ocean':    ['water_ocean_01.wav',     'water_ocean_02.wav',   'water_ocean_03.wav'],
-}
+# Supported audio formats (excludes .m4a which requires ffmpeg)
+SUPPORTED_EXTENSIONS = ('.wav', '.mp3', '.flac', '.ogg', '.aiff')
+SKIPPED_EXTENSIONS = ('.m4a',)
+
+# Dynamically discover all audio files in the directory
+def discover_audio_files(audio_dir):
+    """Auto-discover audio files grouped by water sound type."""
+    files = {}
+    skipped = []
+    if not os.path.exists(audio_dir):
+        return files, skipped
+    
+    for fname in sorted(os.listdir(audio_dir)):
+        # Extract sound type from filename: water_<TYPE>_NN.ext
+        parts = fname.replace('.', '_').split('_')
+        if len(parts) >= 3 and parts[0] == 'water':
+            sound_type = parts[1]
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in SUPPORTED_EXTENSIONS:
+                files.setdefault(sound_type, []).append(fname)
+            elif ext in SKIPPED_EXTENSIONS:
+                skipped.append(fname)
+    
+    return files, skipped
+
+AUDIO_FILES, SKIPPED_FILES = discover_audio_files(AUDIO_DIR)
 
 MAX_DURATION = 180  # 每个音频最多加载180秒(3分钟)
 
@@ -96,7 +114,7 @@ def run_full_analysis():
     """运行完整的真实音频分析流程 v3"""
     
     print("=" * 60)
-    print("  声煞量化分析系统 v3 - 真实音频模式")
+    print("  声煞量化分析系统 v4 - 120样本模式")
     print("  Acoustic Discomfort Index (ADI) Analysis")
     print("  基于 Cymatics 理论 + Freesound 真实水声样本")
     print("  ✅ 数据驱动归一化（不再硬编码参数）")
@@ -107,11 +125,17 @@ def run_full_analysis():
     
     # 列出可用音频
     available_files = [f for f in os.listdir(AUDIO_DIR)
-                       if f.lower().endswith(('.wav', '.mp3', '.flac'))]
-    print(f"\n📁 找到 {len(available_files)} 个音频文件:")
+                       if f.lower().endswith(SUPPORTED_EXTENSIONS)]
+    skipped_for_format = [f for f in os.listdir(AUDIO_DIR)
+                          if f.lower().endswith(SKIPPED_EXTENSIONS)]
+    print(f"\n📁 找到 {len(available_files)} 个可处理音频文件（共{len(available_files)+len(skipped_for_format)}个文件）:")
     for f in sorted(available_files):
         size_mb = os.path.getsize(os.path.join(AUDIO_DIR, f)) / (1024*1024)
         print(f"   - {f} ({size_mb:.1f} MB)")
+    if skipped_for_format:
+        print(f"\n⚠️  跳过 {len(skipped_for_format)} 个 .m4a 文件（需要 ffmpeg 解码，请重新下载为 .wav）：")
+        for f in skipped_for_format:
+            print(f"   ⬜ {f}")
     
     # ============================================================
     # 第一步：加载所有音频并提取特征
@@ -183,7 +207,7 @@ def run_full_analysis():
     # 输出汇总表格
     # ============================================================
     print("\n" + "=" * 75)
-    print("  📊 ADI分析结果汇总表 v3 (基于真实音频特征 + 数据驱动归一化)")
+    print("  📊 ADI分析结果汇总表 v4 (120样本, 基于数据驱动归一化)")
     print("=" * 75)
     header = f"  {'水声类型':^8s} | {'ADI均值':^7s} | {'标准差':^6s} | {'SI':^6s} | {'OI':^6s} | {'CI':^6s} | {'预期':^4s}"
     print(header)
