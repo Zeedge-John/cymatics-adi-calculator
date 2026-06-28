@@ -239,40 +239,148 @@ def batch_calculate_adi(features_list, sound_type_labels=None):
 
 def aggregate_by_sound_type(raw_results):
     """
-    按水声类型聚合结果（计算均值和标准差）
+    按水声类型聚合结果（计算均值、标准差和 95% CI）
     """
     from collections import defaultdict
-    
+    import scipy.stats as stats
+
     grouped = defaultdict(list)
     for res in raw_results:
         label = res['label']
         grouped[label].append(res)
-    
+
     aggregated = {}
     for sound_type, results in grouped.items():
         adis = [r['ADI'] for r in results]
         sis = [r['sub_indices']['SI'] for r in results]
         ois = [r['sub_indices']['OI'] for r in results]
         cis = [r['sub_indices']['CI'] for r in results]
-        
+
+        adis_arr = np.array(adis)
+        n = len(adis_arr)
+        adi_mean = float(np.mean(adis_arr))
+        adi_std = float(np.std(adis_arr, ddof=1))
+
+        # 95% CI for ADI Mean (t-distribution, ddof=1)
+        if n > 1:
+            t_crit = stats.t.ppf(0.975, n - 1)
+            ci_lower = adi_mean - t_crit * adi_std / np.sqrt(n)
+            ci_upper = adi_mean + t_crit * adi_std / np.sqrt(n)
+        else:
+            ci_lower = adi_mean
+            ci_upper = adi_mean
+
         aggregated[sound_type] = {
-            'ADI_mean': float(np.mean(adis)),
-            'ADI_std': float(np.std(adis)),
+            'ADI_mean': adi_mean,
+            'ADI_std': adi_std,
+            'ADI_ci_lower': float(ci_lower),
+            'ADI_ci_upper': float(ci_upper),
             'SI_mean': float(np.mean(sis)),
             'OI_mean': float(np.mean(ois)),
             'CI_mean': float(np.mean(cis)),
-            'n_samples': len(results),
+            'n_samples': n,
             'individual_ADIs': adis,
-            # 也保存原始值范围
             'SI_raw_mean': float(np.mean([r['sub_indices'].get('SI_raw', 0) for r in results])),
             'OI_raw_mean': float(np.mean([r['sub_indices'].get('OI_raw', 0) for r in results])),
             'CI_raw_mean': float(np.mean([r['sub_indices'].get('CI_raw', 0) for r in results])),
         }
-    
+
     return aggregated
 
 
-def interpret_adi_fengshui(adi_value):
+def cohens_d(x, y):
+    """
+    计算两组样本之间的 Cohen's d（效应量）
+
+    参数:
+        x, y: 两个样本的 ADI 值列表（或一维数组）
+
+    返回:
+        d: Cohen's d 值
+            |d| < 0.2  → 可忽略
+            0.2 ≤ |d| < 0.5 → 小效应
+            0.5 ≤ |d| < 0.8 → 中效应
+            |d| ≥ 0.8        → 大效应
+    """
+    x = np.array(x)
+    y = np.array(y)
+    n1, n2 = len(x), len(y)
+    if n1 < 2 or n2 < 2:
+        return np.nan
+    mean_diff = np.mean(x) - np.mean(y)
+    # 合并标准差（pooled standard deviation）
+    s1 = np.var(x, ddof=1)
+    s2 = np.var(y, ddof=1)
+    pooled_sd = np.sqrt(((n1 - 1) * s1 + (n2 - 1) * s2) / (n1 + n2 - 2))
+    if pooled_sd < 1e-10:
+        return 0.0
+    return float(mean_diff / pooled_sd)
+
+
+def tukey_hsd_pairwise(aggregated, raw_results):
+    """
+    对所有水声类型两两执行 Tukey HSD 比较，并附带 Cohen's d
+
+    参数:
+        aggregated: aggregate_by_sound_type() 的输出
+        raw_results: batch_calculate_adi() 的原始输出（用于提取个体样本）
+
+    返回:
+        comparisons: 列表，每个元素为字典
+    """
+    from itertools import combinations
+
+    # 按 sound_type 分组个体 ADI 值
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for res in raw_results:
+        grouped[res['label']].append(res['ADI'])
+
+    sound_types = sorted(grouped.keys())
+    comparisons = []
+
+    for t1, t2 in combinations(sound_types, 2):
+        x = grouped[t1]
+        y = grouped[t2]
+        # Mean Difference
+        md = float(np.mean(x) - np.mean(y))
+        # 简易 Tukey HSD p 值（基于 t 检验 + Bonferroni 校正）
+        # 注：严格 Tukey HSD 需要 Q 分布，此处用 t 检验近似
+        nx, ny = len(x), len(y)
+        sx = np.std(x, ddof=1)
+        sy = np.std(y, ddof=1)
+        se = np.sqrt(sx**2 / nx + sy**2 / ny)
+        if se < 1e-10:
+            t_stat = 0.0
+        else:
+            t_stat = md / se
+        df = nx + ny - 2
+        from scipy import stats as st
+        p_val = 2 * (1 - st.t.cdf(abs(t_stat), df))
+        # Bonferroni 校正
+        n_comparisons = len(sound_types) * (len(sound_types) - 1) // 2
+        p_adjusted = min(p_val * n_comparisons, 1.0)
+
+        # 95% CI for mean difference
+        t_crit = st.t.ppf(0.975, df)
+        ci_low = md - t_crit * se
+        ci_high = md + t_crit * se
+
+        # Cohen's d
+        d = cohens_d(x, y)
+
+        comparisons.append({
+            'comparison': f'{t1} vs. {t2}',
+            'mean_diff': md,
+            'ci_95': (float(ci_low), float(ci_high)),
+            'p_raw': float(p_val),
+            'p_adjusted': float(p_adjusted),
+            'cohens_d': d,
+            'n1': nx,
+            'n2': ny,
+        })
+
+    return comparisons
     """
     根据ADI值给出风水声煞解读
     
